@@ -1,0 +1,21 @@
+{
+  "short_name": "Trading Bot",
+  "name": "Blockchain Auto-Trading Bot",
+  "icons": [
+    {
+      "src": "app-logo.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "app-logo.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/index.html",
+  "background_color": "#0d0f14",
+  "display": "standalone",
+  "scope": "/",
+  "theme_color": "#0d0f14"
+}
