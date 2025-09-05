@@ -1,8 +1,10 @@
-const CACHE_NAME = 'trading-bot-cache-v1';
-const urlsToCache = [
+const CACHE_NAME = 'trading-bot-cache-v3';
+const CORE_ASSETS = [
   '/',
   '/index.html',
+  '/wallet-connector.html', // 👈 Added
   '/app-logo.png',
+];
   'https://cdn.tailwindcss.com',
   'https://s3.tradingview.com/tv.js',
   'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js',
